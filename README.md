@@ -1,36 +1,126 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Article Clipper — Personal Knowledge Graph
 
-## Getting Started
+A public personal knowledge graph for clipping web articles, attaching your own thoughts, and exploring connections visually — similar to Obsidian, but built as a web app.
 
-First, run the development server:
+Anyone can browse the graph and read notes. Only you can add content, protected by a simple admin secret.
+
+## What it does
+
+1. **Clip articles from the web** — Use a browser bookmarklet on any page to capture the URL and title, then add thoughts and tags in a small popup form.
+2. **Scrape readable content** — Saved articles are parsed server-side with Mozilla Readability so the full article text is stored in the graph.
+3. **Explore visually** — The home page renders an interactive force-directed graph of Articles, Thoughts, and Tags. Click a node to read its content and jump to related nodes in the sidebar.
+
+## Tech stack
+
+- **Next.js** (App Router, TypeScript)
+- **Tailwind CSS** + Lucide React icons
+- **Neo4j AuraDB** via `neo4j-driver`
+- **react-force-graph-2d** for the network visualization
+- **@mozilla/readability** + **jsdom** for article extraction
+
+## Project structure
+
+```
+src/
+├── app/
+│   ├── page.tsx              # Knowledge graph dashboard (60/40 split layout)
+│   ├── clip/page.tsx         # Hidden clip form (opened by bookmarklet)
+│   └── api/
+│       ├── graph/route.ts    # GET — public graph data for ForceGraph2D
+│       └── save/route.ts     # POST — protected article save endpoint
+├── components/
+│   ├── GraphCanvas.tsx       # Force graph canvas
+│   └── ReaderSidebar.tsx     # Node detail panel with backlinks
+└── lib/
+    ├── neo4j.ts              # AuraDB driver singleton
+    ├── scraper.ts            # Readability-based article extraction
+    ├── auth.ts               # ADMIN_SECRET verification
+    ├── bookmarklet.ts        # Bookmarklet href builder
+    └── types.ts              # Shared TypeScript types
+```
+
+## Getting started
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Create `.env.local` in the `frontend/` directory:
+
+```env
+NEO4J_URI=neo4j+s://xxxxxxxx.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=your-neo4j-password
+ADMIN_SECRET=your-admin-secret-token
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+| Variable | Description |
+|---|---|
+| `NEO4J_URI` | Neo4j AuraDB connection URI |
+| `NEO4J_USERNAME` | Neo4j username (usually `neo4j`) |
+| `NEO4J_PASSWORD` | Neo4j password |
+| `ADMIN_SECRET` | Token required to save articles via `/api/save` |
+| `NEXT_PUBLIC_APP_URL` | Public origin used by the bookmarklet (set to your deployed URL in production) |
+
+### 3. Run the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the knowledge graph.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Bookmarklet setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The bookmarklet captures `window.location.href` and `window.document.title` from any page and opens a popup to `/clip?url=…&title=…`.
 
-## Learn More
+1. Set `NEXT_PUBLIC_APP_URL` to your hosted app origin.
+2. Copy the bookmarklet string from `src/lib/bookmarklet.ts` (`BOOKMARKLET_HREF`), or build one with `buildBookmarkletHref('https://your-domain.com')`.
+3. Create a new browser bookmark and paste the `javascript:…` string as the URL.
+4. Drag it to your bookmarks bar. Click it on any webpage to clip.
 
-To learn more about Next.js, take a look at the following resources:
+Readable source and setup notes are in `public/bookmarklet.js`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API routes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### `GET /api/graph` (public)
 
-## Deploy on Vercel
+Returns graph data formatted for `react-force-graph-2d`:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```json
+{
+  "nodes": [{ "id", "label", "title", "type", "text?", "content?", "url?", "name?" }],
+  "links": [{ "source", "target" }]
+}
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Node types: `Article`, `Thought`, `Tag`.
+
+### `POST /api/save` (protected)
+
+Requires `x-admin-secret` header or `adminSecret` in the JSON body.
+
+```json
+{
+  "url": "https://example.com/article",
+  "thoughts": "My personal notes…",
+  "tags": ["ai", "productivity"],
+  "adminSecret": "your-token"
+}
+```
+
+Creates or merges `Article`, `Thought`, and `Tag` nodes in Neo4j with `HAS_THOUGHT` and `TAGGED_WITH` relationships.
+
+## Scripts
+
+```bash
+npm run dev      # Start development server
+npm run build    # Production build
+npm run start    # Start production server
+npm run lint     # Run ESLint
+```
