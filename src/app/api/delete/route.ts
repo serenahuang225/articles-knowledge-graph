@@ -30,13 +30,18 @@ async function deleteArticle(request: NextRequest) {
       const deleteResult = await tx.run(
         `
         MATCH (a:Article {id: $articleId})
-        OPTIONAL MATCH (a)-[:HAS_THOUGHT]->(t:Thought)
-        WITH a, collect(t) AS thoughts
-        FOREACH (thought IN thoughts | DETACH DELETE thought)
         DETACH DELETE a
         RETURN count(a) AS deleted
         `,
         { articleId },
+      );
+
+      await tx.run(
+        `
+        MATCH (t:Thought)
+        WHERE NOT (t)--()
+        DELETE t
+        `,
       );
 
       await tx.run(

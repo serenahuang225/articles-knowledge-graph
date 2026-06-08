@@ -1,29 +1,48 @@
 "use client";
 
-import { ExternalLink, Loader2, Tag, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronRight,
+  ExternalLink,
+  Highlighter,
+  Loader2,
+  Plus,
+  Tag,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
-import { getArticleIdForDelete } from "@/lib/graph";
-import type { GraphNode } from "@/lib/types";
+import HighlightedArticleText from "@/components/HighlightedArticleText";
+import HighlightPopover, {
+  type HighlightPopoverState,
+} from "@/components/HighlightPopover";
+import { useTimeTheme } from "@/components/TimeThemeProvider";
+import { formatArticleDate } from "@/lib/article";
+import { getArticleTagNames, getArticleUrl, getNeighbors } from "@/lib/graph";
+import { computeTooltipLeft, computeTooltipTop } from "@/lib/tooltipPosition";
+import type { ArticleComment, GraphData, GraphNode } from "@/lib/types";
 
 interface ReaderSidebarProps {
   node: GraphNode | null;
-  neighbors: GraphNode[];
+  graphData: GraphData;
   onNeighborClick: (node: GraphNode) => void;
   onArticleDelete?: (articleId: string, adminSecret: string) => Promise<void>;
+  onArticleUpdated?: (article: GraphNode) => void;
+  onTagsAdded?: (articleId: string, tags: string[]) => void;
   deleting?: boolean;
 }
 
 function NodeTypeBadge({ type }: { type: GraphNode["type"] }) {
-  const colors: Record<GraphNode["type"], string> = {
-    Article: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
-    Thought: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-    Tag: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
-  };
+  const theme = useTimeTheme();
+  const color =
+    type === "Article" ? theme.graphArticle : theme.graphTag;
 
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[type]}`}
+      className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+      style={{
+        background: `color-mix(in srgb, ${color} 22%, transparent)`,
+        color,
+      }}
     >
       {type}
     </span>
@@ -32,174 +51,351 @@ function NodeTypeBadge({ type }: { type: GraphNode["type"] }) {
 
 export default function ReaderSidebar({
   node,
-  neighbors,
+  graphData,
   onNeighborClick,
   onArticleDelete,
+  onArticleUpdated,
+  onTagsAdded,
   deleting = false,
 }: ReaderSidebarProps) {
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const theme = useTimeTheme();
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [adminSecret, setAdminSecret] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [newTags, setNewTags] = useState("");
+  const [commentBody, setCommentBody] = useState("");
+  const [highlightPopup, setHighlightPopup] =
+    useState<HighlightPopoverState | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     setShowDeleteConfirm(false);
-    setAdminSecret("");
     setDeleteError(null);
+    setActionError(null);
+    setHighlightPopup(null);
+    setCommentBody("");
+    setNewTags("");
   }, [node?.id]);
+
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+
+    function closeOnScroll() {
+      setHighlightPopup(null);
+    }
+
+    scrollEl.addEventListener("scroll", closeOnScroll, { passive: true });
+    return () => scrollEl.removeEventListener("scroll", closeOnScroll);
+  }, []);
 
   if (!node) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-8 text-center text-zinc-500">
+      <div className="theme-text-muted flex h-full items-center justify-center p-8 text-center">
         <p className="text-sm">Select a node on the graph to read its details.</p>
       </div>
     );
   }
 
-  const articleIdForDelete = getArticleIdForDelete(node);
-
-  const linkedTags = neighbors.filter((n) => n.type === "Tag");
-  const linkedThoughts = neighbors.filter((n) => n.type === "Thought");
+  const neighbors = getNeighbors(node.id, graphData.nodes, graphData.links);
   const linkedArticles = neighbors.filter((n) => n.type === "Article");
-  const otherNeighbors = neighbors.filter(
-    (n) => n.type !== "Tag" && n.type !== "Thought" && n.type !== "Article",
-  );
+  const linkedTags = neighbors.filter((n) => n.type === "Tag");
+  const articleUrl = getArticleUrl(node);
+  const isArticle = node.type === "Article";
+
+  function handleTextSelected(quote: string, rect: DOMRect) {
+    setHighlightPopup({
+      quote,
+      top: computeTooltipTop(rect),
+      left: computeTooltipLeft(rect, scrollRef.current),
+    });
+    setCommentBody("");
+  }
+
+  async function handleAddComment(quote?: string) {
+    if (!node || node.type !== "Article" || !commentBody.trim() || !adminSecret) {
+      return;
+    }
+
+    setSubmitting(true);
+    setActionError(null);
+
+    try {
+      const response = await fetch("/api/article/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          articleId: node.id,
+          body: commentBody,
+          quote: quote ?? highlightPopup?.quote ?? undefined,
+          adminSecret,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        error?: string;
+        comments?: ArticleComment[];
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to add comment");
+      }
+
+      onArticleUpdated?.({
+        ...node,
+        comments: payload.comments ?? node.comments,
+      });
+      setCommentBody("");
+      setHighlightPopup(null);
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to add comment",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAddTags() {
+    if (!node || node.type !== "Article" || !newTags.trim() || !adminSecret) {
+      return;
+    }
+
+    const tags = newTags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (tags.length === 0) return;
+
+    setSubmitting(true);
+    setActionError(null);
+
+    try {
+      const response = await fetch("/api/article/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          articleId: node.id,
+          tags,
+          adminSecret,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to add tags");
+      }
+
+      onTagsAdded?.(node.id, tags);
+      setNewTags("");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to add tags");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const tagNames = isArticle
+    ? getArticleTagNames(node.id, graphData.nodes, graphData.links)
+    : [];
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+    <div className="grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
+      <header className="theme-border shrink-0 border-b px-5 py-4">
         <div className="mb-2 flex items-center gap-2">
           <NodeTypeBadge type={node.type} />
+          {isArticle && (node.comments?.length ?? 0) > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+              style={{
+                background: theme.highlightBg,
+                color: theme.fg,
+              }}
+            >
+              <Highlighter className="h-3 w-3" />
+              {node.comments!.length} highlight
+              {node.comments!.length === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
-        <h2 className="text-lg font-semibold leading-snug text-zinc-900 dark:text-zinc-50">
+        <h2 className="theme-text text-lg font-semibold leading-snug">
           {node.title}
         </h2>
-        {node.url && (
+        {isArticle && node.createdAt && (
+          <p className="theme-text-muted mt-1 text-xs">
+            Clipped {formatArticleDate(node.createdAt)}
+          </p>
+        )}
+        {articleUrl && (
           <a
-            href={node.url}
+            href={articleUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400"
+            className="theme-link mt-2 inline-flex items-center gap-1 text-sm hover:underline"
           >
             Open source
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
         )}
-      </div>
+      </header>
 
-      <div className="flex-1 space-y-6 overflow-y-auto px-5 py-4">
-        {(node.type === "Article" || node.text) && (
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Scraped Article Text
-            </h3>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-              {node.text || "No article text available."}
-            </p>
-          </section>
-        )}
-
-        {(node.type === "Thought" || node.content) && (
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Your Thoughts
-            </h3>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-              {node.content || node.type !== "Thought"
-                ? node.content
-                : "No thoughts recorded."}
-            </p>
-          </section>
-        )}
-
-        {node.type === "Article" && linkedThoughts.length > 0 && (
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Your Thoughts
-            </h3>
-            {linkedThoughts.map((thought) => (
-              <p
-                key={thought.id}
-                className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300"
-              >
-                {thought.content}
+      <div
+        ref={scrollRef}
+        className="min-h-0 overflow-y-auto overscroll-y-contain px-5 py-4"
+      >
+        <div className="space-y-6 pb-4">
+          {isArticle && (
+            <section>
+              <h3 className="theme-section-label mb-2 text-xs font-medium uppercase tracking-wide">
+                Article
+              </h3>
+              <HighlightedArticleText
+                text={node.text ?? ""}
+                comments={node.comments}
+                scrollContainerRef={scrollRef}
+                onTextSelected={handleTextSelected}
+              />
+              <p className="theme-text-muted mt-2 text-xs">
+                Highlighted text uses a warm tint. Hover for comments, or select
+                text to add a new highlight.
               </p>
-            ))}
-          </section>
-        )}
+            </section>
+          )}
 
-        {(node.type === "Tag" || linkedTags.length > 0) && (
-          <section>
-            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              <Tag className="h-3.5 w-3.5" />
-              Tags
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {node.type === "Tag" ? (
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                  {node.name ?? node.label}
-                </span>
-              ) : (
-                linkedTags.map((tag) => (
+          {isArticle && node.thoughts && (
+            <section className="theme-thought-box rounded-lg border p-4">
+              <h3
+                className="mb-2 text-xs font-medium uppercase tracking-wide"
+                style={{ color: theme.highlight }}
+              >
+                Your Thoughts
+              </h3>
+              <p className="theme-text whitespace-pre-wrap text-sm leading-relaxed">
+                {node.thoughts}
+              </p>
+            </section>
+          )}
+
+          {(isArticle || node.type === "Tag" || linkedTags.length > 0) && (
+            <section>
+              <h3 className="theme-section-label mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide">
+                <Tag className="h-3.5 w-3.5" />
+                Tags
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {node.type === "Tag" ? (
+                  <span className="theme-tag-pill rounded-full px-3 py-1 text-sm">
+                    {node.name ?? node.label}
+                  </span>
+                ) : (
+                  tagNames.map((name) => {
+                    const tagNode = linkedTags.find(
+                      (t) => (t.name ?? t.label) === name,
+                    );
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => tagNode && onNeighborClick(tagNode)}
+                        className="theme-tag-pill rounded-full px-3 py-1 text-sm transition hover:brightness-95"
+                      >
+                        {name}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {isArticle && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={newTags}
+                    onChange={(e) => setNewTags(e.target.value)}
+                    placeholder="new-tag, another-tag"
+                    className="theme-input min-w-0 flex-1 rounded-md border px-3 py-2 text-sm"
+                  />
                   <button
-                    key={tag.id}
                     type="button"
-                    onClick={() => onNeighborClick(tag)}
-                    className="rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-800 transition hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
+                    disabled={submitting || !newTags.trim() || !adminSecret}
+                    onClick={() => void handleAddTags()}
+                    className="theme-accent flex shrink-0 items-center gap-1 rounded-md px-3 py-2 text-sm font-medium transition disabled:opacity-50"
                   >
-                    {tag.name ?? tag.label}
+                    <Plus className="h-4 w-4" />
+                    Add
                   </button>
-                ))
+                </div>
               )}
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {neighbors.length > 0 && (
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Related Nodes
-            </h3>
-            <ul className="space-y-1">
-              {[...linkedArticles, ...linkedThoughts, ...linkedTags, ...otherNeighbors]
-                .filter((n) => n.id !== node.id)
-                .map((neighbor) => (
-                  <li key={neighbor.id}>
+          {neighbors.length > 0 && node.type === "Tag" && (
+            <section>
+              <h3 className="theme-section-label mb-2 text-xs font-medium uppercase tracking-wide">
+                Related Articles
+              </h3>
+              <ul className="space-y-2">
+                {linkedArticles.map((article) => (
+                  <li key={article.id}>
                     <button
                       type="button"
-                      onClick={() => onNeighborClick(neighbor)}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => onNeighborClick(article)}
+                      className="theme-related-link group flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium transition"
                     >
-                      <span className="font-medium">{neighbor.label}</span>
-                      <span className="ml-2 text-xs text-zinc-400">
-                        {neighbor.type}
-                      </span>
+                      <span className="min-w-0 truncate">{article.label}</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 opacity-60 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
                     </button>
                   </li>
                 ))}
-            </ul>
-          </section>
-        )}
+              </ul>
+            </section>
+          )}
+
+          {actionError && (
+            <p className="theme-error-text text-sm">{actionError}</p>
+          )}
+        </div>
       </div>
 
-      {articleIdForDelete && onArticleDelete && (
-        <div className="shrink-0 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+      {highlightPopup && (
+        <HighlightPopover
+          state={highlightPopup}
+          comment={commentBody}
+          containerRef={scrollRef}
+          onCommentChange={setCommentBody}
+          onSave={() => void handleAddComment(highlightPopup.quote)}
+          onClose={() => {
+            setHighlightPopup(null);
+            setCommentBody("");
+          }}
+          submitting={submitting}
+          needsAdminSecret={!adminSecret}
+        />
+      )}
+
+      {isArticle && (
+        <footer className="theme-border shrink-0 space-y-3 border-t px-5 py-4">
+          <input
+            type="password"
+            value={adminSecret}
+            onChange={(e) => setAdminSecret(e.target.value)}
+            placeholder="Admin secret (required for edits)"
+            autoComplete="off"
+            className="theme-input w-full rounded-md border px-3 py-2 text-sm"
+          />
+
           {showDeleteConfirm ? (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Delete this article and its thoughts from the graph?
+            <div className="space-y-2">
+              <p className="theme-text-muted text-sm">
+                Delete this article from the graph?
               </p>
-              <input
-                type="password"
-                value={adminSecret}
-                onChange={(e) => setAdminSecret(e.target.value)}
-                placeholder="Admin secret"
-                autoComplete="off"
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none ring-red-500 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-              />
               {deleteError && (
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  {deleteError}
-                </p>
+                <p className="theme-error-text text-sm">{deleteError}</p>
               )}
               <div className="flex gap-2">
                 <button
@@ -208,9 +404,8 @@ export default function ReaderSidebar({
                   onClick={async () => {
                     setDeleteError(null);
                     try {
-                      await onArticleDelete(articleIdForDelete, adminSecret);
+                      await onArticleDelete?.(node.id, adminSecret);
                       setShowDeleteConfirm(false);
-                      setAdminSecret("");
                     } catch (err) {
                       setDeleteError(
                         err instanceof Error
@@ -219,7 +414,7 @@ export default function ReaderSidebar({
                       );
                     }
                   }}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-60"
+                  className="theme-danger flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition disabled:opacity-60"
                 >
                   {deleting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -233,10 +428,9 @@ export default function ReaderSidebar({
                   disabled={deleting}
                   onClick={() => {
                     setShowDeleteConfirm(false);
-                    setAdminSecret("");
                     setDeleteError(null);
                   }}
-                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="theme-text theme-border rounded-md border px-3 py-2 text-sm"
                 >
                   Cancel
                 </button>
@@ -246,13 +440,13 @@ export default function ReaderSidebar({
             <button
               type="button"
               onClick={() => setShowDeleteConfirm(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30"
+              className="theme-danger-outline flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition"
             >
               <Trash2 className="h-4 w-4" />
               Delete article
             </button>
           )}
-        </div>
+        </footer>
       )}
     </div>
   );

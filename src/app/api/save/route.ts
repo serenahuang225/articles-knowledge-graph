@@ -23,7 +23,6 @@ export async function POST(request: NextRequest) {
 
     const scraped = await scrapeArticle(url);
     const articleId = url;
-    const thoughtId = `thought-${articleId}`;
 
     const driver = getDriver();
     const session = driver.session();
@@ -33,16 +32,16 @@ export async function POST(request: NextRequest) {
         await tx.run(
           `
           MERGE (a:Article {id: $articleId})
+          ON CREATE SET a.createdAt = datetime()
           SET a.url = $url,
               a.title = $title,
               a.text = $text,
+              a.thoughts = $thoughts,
               a.updatedAt = datetime()
 
-          MERGE (t:Thought {id: $thoughtId})
-          SET t.content = $thoughts,
-              t.updatedAt = datetime()
-
-          MERGE (a)-[:HAS_THOUGHT]->(t)
+          WITH a
+          OPTIONAL MATCH (a)-[:HAS_THOUGHT]->(t:Thought)
+          DETACH DELETE t
 
           WITH a
           UNWIND $tags AS tagName
@@ -55,7 +54,6 @@ export async function POST(request: NextRequest) {
             url,
             title: scraped.title,
             text: scraped.textContent,
-            thoughtId,
             thoughts: thoughts ?? "",
             tags: Array.isArray(tags) ? tags.filter(Boolean) : [],
           },

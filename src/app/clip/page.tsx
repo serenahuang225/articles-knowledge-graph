@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
 
+import { useTimeTheme } from "@/components/TimeThemeProvider";
+
 function parseTags(raw: string): string[] {
   return raw
     .split(",")
@@ -61,7 +63,7 @@ function ClipForm() {
 
   if (!url) {
     return (
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="theme-text-muted text-sm">
         No URL provided. Use the bookmarklet on a webpage to open this form.
       </p>
     );
@@ -70,19 +72,19 @@ function ClipForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+        <label className="theme-section-label mb-1 block text-xs font-medium uppercase tracking-wide">
           Page Title
         </label>
-        <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+        <p className="theme-field-readonly rounded-md border px-3 py-2 text-sm">
           {title || "Untitled"}
         </p>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+        <label className="theme-section-label mb-1 block text-xs font-medium uppercase tracking-wide">
           URL
         </label>
-        <p className="break-all rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+        <p className="theme-field-readonly break-all rounded-md border px-3 py-2 text-sm">
           {url}
         </p>
       </div>
@@ -90,7 +92,7 @@ function ClipForm() {
       <div>
         <label
           htmlFor="thoughts"
-          className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500"
+          className="theme-section-label mb-1 block text-xs font-medium uppercase tracking-wide"
         >
           My Thoughts
         </label>
@@ -100,14 +102,14 @@ function ClipForm() {
           onChange={(e) => setThoughts(e.target.value)}
           rows={4}
           placeholder="What stood out to you?"
-          className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-blue-500 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          className="theme-input w-full rounded-md border px-3 py-2 text-sm"
         />
       </div>
 
       <div>
         <label
           htmlFor="tags"
-          className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500"
+          className="theme-section-label mb-1 block text-xs font-medium uppercase tracking-wide"
         >
           Tags
         </label>
@@ -117,15 +119,15 @@ function ClipForm() {
           value={tags}
           onChange={(e) => setTags(e.target.value)}
           placeholder="ai, productivity, design"
-          className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-blue-500 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          className="theme-input w-full rounded-md border px-3 py-2 text-sm"
         />
-        <p className="mt-1 text-xs text-zinc-500">Comma-separated</p>
+        <p className="theme-text-muted mt-1 text-xs">Comma-separated</p>
       </div>
 
       <div>
         <label
           htmlFor="adminSecret"
-          className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500"
+          className="theme-section-label mb-1 block text-xs font-medium uppercase tracking-wide"
         >
           Admin Secret
         </label>
@@ -136,28 +138,40 @@ function ClipForm() {
           onChange={(e) => setAdminSecret(e.target.value)}
           required
           autoComplete="off"
-          className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-blue-500 focus:ring-2 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          className="theme-input w-full rounded-md border px-3 py-2 text-sm"
         />
       </div>
 
       {error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          className="rounded-md px-3 py-2 text-sm"
+          style={{
+            background: "color-mix(in srgb, var(--theme-danger) 12%, transparent)",
+            color: "var(--theme-danger)",
+          }}
+        >
           {error}
         </p>
       )}
 
       {success && (
         <div className="space-y-3">
-          <p className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <p
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+            style={{
+              background: "color-mix(in srgb, var(--theme-accent) 18%, transparent)",
+              color: "var(--theme-fg)",
+            }}
+          >
             <CheckCircle className="h-4 w-4 shrink-0" />
             Saved to your knowledge graph.
           </p>
           <Link
             href="/"
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500"
+            className="theme-accent flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition"
           >
             <Home className="h-4 w-4" />
-            View Knowledge Graph
+            View Serena's Knowledge Graph
           </Link>
         </div>
       )}
@@ -166,7 +180,7 @@ function ClipForm() {
         <button
           type="submit"
           disabled={submitting}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className="theme-accent flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition disabled:opacity-60"
         >
           {submitting ? (
             <>
@@ -183,19 +197,19 @@ function ClipForm() {
 }
 
 export default function ClipPage() {
+  const theme = useTimeTheme();
+
   return (
-    <div className="min-h-screen bg-zinc-50 px-4 py-8 dark:bg-zinc-950">
-      <div className="mx-auto w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="theme-page min-h-screen px-4 py-8">
+      <div className="theme-surface theme-border mx-auto w-full max-w-md rounded-xl border p-6 shadow-sm">
         <div className="mb-6 flex items-center gap-2">
-          <Scissors className="h-5 w-5 text-blue-600" />
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Clip Article
-          </h1>
+          <Scissors className="h-5 w-5" style={{ color: theme.accent }} />
+          <h1 className="theme-text text-lg font-semibold">Clip Article</h1>
         </div>
 
         <Suspense
           fallback={
-            <p className="text-sm text-zinc-500">Loading clip form…</p>
+            <p className="theme-text-muted text-sm">Loading clip form…</p>
           }
         >
           <ClipForm />

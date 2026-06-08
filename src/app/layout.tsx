@@ -1,19 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+
+import TimeThemeProvider from "@/components/TimeThemeProvider";
+
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Knowledge Graph",
+  title: "Serena's Knowledge Graph",
   description: "A public personal knowledge graph for articles, thoughts, and tags",
 };
 
@@ -23,11 +15,27 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className="h-full antialiased" data-theme="day" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,1..1000&display=swap"
+          rel="stylesheet"
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var h=new Date().getHours(),p="day";if((h>=5&&h<8)||(h>=17&&h<20))p="golden";else if(h>=20||h<5)p="night";document.documentElement.dataset.theme=p;})();`,
+          }}
+        />
+      </head>
+      <body className="h-full overflow-hidden">
+        <TimeThemeProvider>{children}</TimeThemeProvider>
+      </body>
     </html>
   );
 }

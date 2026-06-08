@@ -9,18 +9,14 @@
  * NEXT_PUBLIC_APP_URL in .env.local.
  */
 (function () {
-  var YOUR_APP_URL = "https://articles-knowledge-graph.vercel.app/";
+  var YOUR_APP_URL = "https://articles-knowledge-graph.vercel.app";
   var url = encodeURIComponent(window.location.href);
   var title = encodeURIComponent(window.document.title);
-  window.open(
-    YOUR_APP_URL + "/clip?url=" + url + "&title=" + title,
-    "articleClipper",
-    "width=480,height=640,scrollbars=yes,resizable=yes",
-  );
+  location.href = YOUR_APP_URL + "/clip?url=" + url + "&title=" + title;
 })();
 
 /**
  * Minified javascript: string (replace YOUR_APP_URL before use):
  *
- * javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);window.open('YOUR_APP_URL/clip?url='+u+'&title='+t,'articleClipper','width=480,height=640,scrollbars=yes,resizable=yes')})();
+ * javascript:(function(){var u=encodeURIComponent(location.href),t=encodeURIComponent(document.title);location.href='YOUR_APP_URL/clip?url='+u+'&title='+t})();
  */
