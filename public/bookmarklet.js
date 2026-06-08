@@ -9,7 +9,7 @@
  * NEXT_PUBLIC_APP_URL in .env.local.
  */
 (function () {
-  var YOUR_APP_URL = "https://your-domain.com";
+  var YOUR_APP_URL = "https://articles-knowledge-graph.vercel.app/";
   var url = encodeURIComponent(window.location.href);
   var title = encodeURIComponent(window.document.title);
   window.open(
